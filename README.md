@@ -52,7 +52,7 @@ Ce projet Ansible déploie et configure un serveur DNS récursif Unbound avec le
 
 ## Prérequis
 
-- Ubuntu 24.04 LTS 
+- Ubuntu 24.04 LTS
   - testé mais les OS familles Debian avec Unbound en dépôt fonctionne normalement
 - Ansible 2.9+
 - Accès root/sudo sur les serveurs cibles
@@ -63,8 +63,8 @@ Ce projet Ansible déploie et configure un serveur DNS récursif Unbound avec le
 ### 1. Cloner ou créer la structure
 
 ```bash
-git clone 
-cd unbound-ansible
+git clone https://github.com/vignemail1/ansible-unbound.git
+cd ansible-unbound
 ```
 
 ### 2. Placer les fichiers
@@ -90,10 +90,9 @@ ansible_python_interpreter=/usr/bin/python3
 
 ### 4. Personnaliser les variables
 
-Édite `install-unbound.yml` et modifie les variables selon tes besoins :
+Édite `group_vars/dns_servers/main.yml` et modifie les variables selon tes besoins :
 
 ```yaml
-vars:
   # DNS système (pour l'OS lui-même)
   system_dns_servers:
     - "1.1.1.1"
@@ -140,7 +139,7 @@ ansible-playbook -i inventory.ini install-unbound.yml
 ### Ajouter des domaines à bloquer
 
 **Option 1 : Liste manuelle**
-Édite la variable `blackhole_domains_manual` dans le playbook.
+Édite la variable `blackhole_domains_manual` dans `group_vars/dns_servers/main.yml`.
 
 **Option 2 : Liste externe supplémentaire**
 Modifie `blackhole_external_url` pour pointer vers ta propre liste.
@@ -165,8 +164,10 @@ Format du fichier (un subnet par ligne) :
 
 Pour qu'Unbound interroge directement les serveurs racine :
 
-1. Supprime ou commente le template `forward-zone.conf.j2`
-2. Retire la tâche correspondante du playbook
+1. définit `unbound_upstream_dns` avec une liste vide dans `group_vars/dns_servers/main.yml`
+2. relance le playbook
+3. retire le fichier `15-forward-zone.conf` dans le dossier de configuration d'Unbound
+4. vérifier la configuration et redémarre Unbound `unbound-checkconf && systemctl restart unbound`
 
 ## Vérification et tests
 
@@ -177,7 +178,7 @@ Pour qu'Unbound interroge directement les serveurs racine :
 sudo systemctl status unbound
 
 # Vérifier que le port 53 est utilisé par Unbound
-sudo ss -tulpn | grep :53
+sudo ss -tulpn 'sport == 53'
 
 # Tester la résolution DNS
 dig @localhost google.com
@@ -333,7 +334,7 @@ ls -lh /var/cache/unbound/
 
 ```bash
 # Identifier le processus
-sudo ss -tulpn | grep :53
+sudo ss -tulpn 'sport == 53'
 
 # Si systemd-resolved est toujours actif
 sudo systemctl stop systemd-resolved
