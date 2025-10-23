@@ -1,0 +1,11 @@
+# Configuration DNS générée par Ansible
+# Date de génération : {{ ansible_date_time.iso8601 }}
+# Ne pas modifier manuellement - géré par Ansible
+
+{% for dns in system_dns_servers %}
+nameserver {{ dns }}
+{% endfor %}
+
+options timeout:2
+options attempts:2
+options rotate

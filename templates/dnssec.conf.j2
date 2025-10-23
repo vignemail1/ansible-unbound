@@ -1,0 +1,89 @@
+server:
+    # ========================================
+    # DNSSEC - VALIDATION ET SÉCURITÉ
+    # ========================================
+    
+    # Fichier de clé racine avec mise à jour automatique (RFC5011)
+    auto-trust-anchor-file: "/var/lib/unbound/root.key"
+    
+    # Root hints (serveurs racine DNS)
+    root-hints: "/var/lib/unbound/root.hints"
+    
+    # Configuration des modules (validator DOIT être présent)
+    module-config: "validator iterator"
+    
+    # ========================================
+    # OPTIONS DE VALIDATION DNSSEC
+    # ========================================
+    
+    # Exiger les données DNSSEC (rejeter si DNSSEC stripped)
+    harden-dnssec-stripped: yes
+    
+    # Validation stricte des références
+    harden-referral-path: no
+    
+    # Validation sous NXDOMAIN
+    harden-below-nxdomain: yes
+    
+    # Empêcher le downgrade d'algorithme DNSSEC
+    harden-algo-downgrade: yes
+    
+    # ========================================
+    # AGGRESSIVE NSEC (RFC 8198)
+    # ========================================
+    
+    # Utilisation agressive de NSEC pour réduire les requêtes
+    aggressive-nsec: yes
+    
+    # ========================================
+    # TRUST ANCHOR SIGNALING (RFC 8145)
+    # ========================================
+    
+    # Signaler les trust anchors au serveur racine
+    trust-anchor-signaling: yes
+    
+    # Support des sentinels pour la clé racine
+    root-key-sentinel: yes
+    
+    # ========================================
+    # LOGGING DNSSEC
+    # ========================================
+    
+    # Niveau de log pour la validation (0=aucun, 1=erreurs, 2=détaillé)
+    val-log-level: 1
+    
+    # ========================================
+    # PARAMÈTRES DE CACHE DNSSEC
+    # ========================================
+    
+    # Taille du cache de clés DNSSEC
+    key-cache-size: 32m
+    key-cache-slabs: 4
+    
+    # Négative cache pour DNSSEC
+    neg-cache-size: 4m
+    
+    # ========================================
+    # PREFETCH DNSSEC
+    # ========================================
+    
+    # Prefetch des clés avant expiration
+    prefetch: yes
+    prefetch-key: yes
+    
+    # ========================================
+    # PARAMÈTRES AVANCÉS
+    # ========================================
+    
+    # Ignorer les TTL trop courts ou trop longs
+    cache-min-ttl: 300
+    cache-max-ttl: 86400
+    
+    # TTL pour les réponses négatives
+    cache-max-negative-ttl: 3600
+    
+    # Taille du buffer EDNS
+    edns-buffer-size: 1232
+    
+    # Ne pas utiliser 0x20 pour l'identité (peut causer des problèmes avec DNSSEC)
+    use-caps-for-id: no

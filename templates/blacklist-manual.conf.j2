@@ -1,0 +1,10 @@
+server:
+    # ========================================
+    # BLACKLIST MANUELLE - NXDOMAIN
+    # ========================================
+    # Domaines gérés manuellement via Ansible
+    # Réponse: NXDOMAIN (domaine inexistant)
+    
+{% for domain in blackhole_domains_manual %}
+    local-zone: "{{ domain }}" always_nxdomain
+{% endfor %}

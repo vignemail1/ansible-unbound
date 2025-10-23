@@ -1,0 +1,54 @@
+server:
+    # ========================================
+    # STATISTIQUES ET MONITORING
+    # ========================================
+    
+    # Statistiques étendues pour Prometheus
+    extended-statistics: yes
+    statistics-cumulative: yes
+    statistics-interval: 0
+    
+    # ========================================
+    # LOGGING
+    # ========================================
+    
+    # Utiliser syslog (journald)
+    use-syslog: yes
+    log-time-ascii: yes
+    
+    # Désactiver les logs de requêtes (performance)
+    log-queries: no
+    log-replies: no
+    log-local-actions: no
+    log-servfail: no
+    
+    # ========================================
+    # RATE LIMITING
+    # ========================================
+    
+    # Limite globale par IP source
+    ratelimit: {{ ratelimit_global | default(1000) }}
+    ratelimit-size: 4m
+    ratelimit-factor: 10
+    
+    # Limite par IP pour requêtes sortantes
+    ip-ratelimit: {{ ip_ratelimit | default(100) }}
+    ip-ratelimit-size: 4m
+    ip-ratelimit-factor: 10
+    
+    # Limites TCP
+    incoming-num-tcp: 1000
+    outgoing-num-tcp: 10
+    
+    # Protection contre flood
+    unwanted-reply-threshold: 10000000
+    
+    # ========================================
+    # SÉCURITÉ ADDITIONNELLE
+    # ========================================
+    
+    # Délai avant fermeture connexion TCP
+    tcp-idle-timeout: 30000
+    
+    # Limite de requêtes en file d'attente
+    jostle-timeout: 200

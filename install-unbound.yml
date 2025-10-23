@@ -1,0 +1,460 @@
+---
+- name: Installation et configuration d'Unbound avec mise à jour automatique
+  hosts: dns_servers
+  become: true
+
+  tasks:
+    # ========================================
+    # DÉSACTIVATION DE SYSTEMD-RESOLVED
+    # ========================================
+
+    - name: Vérifier si systemd-resolved est actif
+      ansible.builtin.systemd:
+        name: systemd-resolved
+      register: resolved_status
+      failed_when: false
+
+    - name: Désactiver le DNS stub listener de systemd-resolved
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^#?DNSStubListener='
+        line: 'DNSStubListener=no'
+        state: present
+        create: false
+      when: resolved_status.status is defined and resolved_status.status.ActiveState == "active"
+      notify: Redémarrer systemd-resolved
+
+    - name: Flush handlers pour appliquer les changements de systemd-resolved
+      ansible.builtin.meta: flush_handlers
+
+    - name: Arrêter et désactiver systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: false
+        masked: true
+      when: resolved_status.status is defined
+      register: resolved_disabled
+
+    - name: Vérifier si /etc/resolv.conf est un lien symbolique
+      ansible.builtin.stat:
+        path: /etc/resolv.conf
+      register: resolv_conf_stat
+
+    - name: Supprimer le lien symbolique /etc/resolv.conf
+      ansible.builtin.file:
+        path: /etc/resolv.conf
+        state: absent
+      when: resolv_conf_stat.stat.islnk is defined and resolv_conf_stat.stat.islnk
+
+    - name: Créer un nouveau fichier /etc/resolv.conf avec les DNS système
+      ansible.builtin.template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ========================================
+    # INSTALLATION ET CONFIGURATION D'UNBOUND
+    # ========================================
+
+    - name: Mise à jour du cache APT
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Installation des paquets nécessaires
+      ansible.builtin.apt:
+        name:
+          - unbound
+          - curl
+          - dns-root-data
+        state: present
+      notify: Redémarrer Unbound
+
+    - name: Créer les répertoires de configuration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /etc/unbound/unbound.conf.d
+        - /var/cache/unbound
+        - /usr/local/bin
+
+    - name: Créer le répertoire pour les données Unbound
+      ansible.builtin.file:
+        path: /var/lib/unbound
+        state: directory
+        owner: unbound
+        group: unbound
+        mode: '0755'
+
+    # ========================================
+    # CONFIGURATION DNSSEC
+    # ========================================
+
+    - name: Vérifier si le fichier root.key existe
+      ansible.builtin.stat:
+        path: /var/lib/unbound/root.key
+      register: root_key_stat
+
+    - name: Initialiser la trust anchor DNSSEC avec unbound-anchor
+      ansible.builtin.command: unbound-anchor -a /var/lib/unbound/root.key
+      args:
+        creates: /var/lib/unbound/root.key
+      become_user: unbound
+      become: true
+      when: not root_key_stat.stat.exists or root_key_stat.stat.size == 0
+      register: anchor_init
+
+    - name: Assurer les permissions correctes sur root.key
+      ansible.builtin.file:
+        path: /var/lib/unbound/root.key
+        owner: unbound
+        group: unbound
+        mode: '0644'
+
+    - name: Télécharger les root hints
+      ansible.builtin.get_url:
+        url: https://www.internic.net/domain/named.root
+        dest: /var/lib/unbound/root.hints
+        owner: unbound
+        group: unbound
+        mode: '0644'
+      register: root_hints_download
+
+    - name: Configuration DNSSEC d'Unbound
+      ansible.builtin.template:
+        src: dnssec.conf.j2
+        dest: /etc/unbound/unbound.conf.d/05-dnssec.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: 'unbound-checkconf %s'
+      notify: Recharger Unbound
+
+    # ========================================
+    # CONFIGURATION DES FICHIERS
+    # ========================================
+
+    - name: Configuration du contrôle d'accès et interface
+      ansible.builtin.template:
+        src: access-control.conf.j2
+        dest: /etc/unbound/unbound.conf.d/10-access-control.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: 'unbound-checkconf %s'
+      notify: Recharger Unbound
+
+    - name: Configuration des DNS upstream (forward-zone)
+      ansible.builtin.template:
+        src: forward-zone.conf.j2
+        dest: /etc/unbound/unbound.conf.d/15-forward-zone.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: 'unbound-checkconf %s'
+      when: unbound_upstream_dns | len > 0
+      notify: Recharger Unbound
+
+    - name: Configuration de la blacklist manuelle
+      ansible.builtin.template:
+        src: blacklist-manual.conf.j2
+        dest: /etc/unbound/unbound.conf.d/20-blacklist-manual.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: 'unbound-checkconf %s'
+      notify: Recharger Unbound
+
+    - name: Configuration du monitoring et rate-limiting
+      ansible.builtin.template:
+        src: monitoring-and-security.conf.j2
+        dest: /etc/unbound/unbound.conf.d/25-monitoring-security.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: 'unbound-checkconf %s'
+      notify: Recharger Unbound
+
+    # ========================================
+    # SCRIPTS DE MISE À JOUR AUTOMATIQUE
+    # ========================================
+
+    - name: Créer le script de mise à jour des listes externes
+      ansible.builtin.template:
+        src: update-unbound-lists.sh.j2
+        dest: /usr/local/bin/update-unbound-lists.sh
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Créer le service systemd pour la mise à jour des listes
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/unbound-update-lists.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Mise à jour des listes Unbound (blacklist et subnets)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/update-unbound-lists.sh
+          User=root
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Recharger systemd
+
+    - name: Créer le timer systemd pour la mise à jour périodique des listes
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/unbound-update-lists.timer
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Timer pour mise à jour périodique des listes Unbound
+
+          [Timer]
+          OnCalendar=daily
+          OnCalendar=*-*-* {{ update_hour }}:{{ update_minute }}:00
+          Persistent=true
+          RandomizedDelaySec=300
+
+          [Install]
+          WantedBy=timers.target
+      notify: Recharger systemd
+
+    - name: Créer le timer systemd pour mise à jour des root hints
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/unbound-root-hints-update.timer
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Mise à jour mensuelle des root hints Unbound
+
+          [Timer]
+          OnCalendar=monthly
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+      notify: Recharger systemd
+
+    - name: Créer le service de mise à jour des root hints
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/unbound-root-hints-update.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Mise à jour des root hints Unbound
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/curl -sSfL -o /var/lib/unbound/root.hints.tmp https://www.internic.net/domain/named.root
+          ExecStart=/bin/mv -f /var/lib/unbound/root.hints.tmp /var/lib/unbound/root.hints
+          ExecStart=/bin/chown unbound:unbound /var/lib/unbound/root.hints
+          ExecStartPost=/usr/sbin/unbound-control reload_keep_cache
+          User=root
+          StandardOutput=journal
+          StandardError=journal
+      notify: Recharger systemd
+
+    # ========================================
+    # CONFIGURATION PRINCIPALE
+    # ========================================
+
+    - name: Inclure les fichiers de configuration personnalisés dans unbound.conf
+      ansible.builtin.lineinfile:
+        path: /etc/unbound/unbound.conf
+        line: 'include-toplevel: "/etc/unbound/unbound.conf.d/*.conf"'
+        state: present
+        insertafter: EOF
+      notify: Redémarrer Unbound
+
+    # ========================================
+    # PROMETHEUS EXPORTER (OPTIONNEL)
+    # ========================================
+
+    - name: Installation de l'exporter Prometheus pour Unbound
+      when: enable_prometheus_exporter | default(false)
+      block:
+        - name: Télécharger unbound_exporter
+          ansible.builtin.get_url:
+            url: "https://github.com/letsencrypt/unbound_exporter/releases/download/v0.4.6/unbound_exporter-0.4.6.linux-amd64.tar.gz"
+            dest: /tmp/unbound_exporter.tar.gz
+            mode: '0644'
+
+        - name: Extraire unbound_exporter
+          ansible.builtin.unarchive:
+            src: /tmp/unbound_exporter.tar.gz
+            dest: /usr/local/bin/
+            remote_src: true
+            extra_opts: ['--strip-components=1']
+            creates: /usr/local/bin/unbound_exporter
+
+        - name: Créer le service systemd pour unbound_exporter
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/unbound_exporter.service
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              [Unit]
+              Description=Prometheus Unbound Exporter
+              After=unbound.service
+
+              [Service]
+              Type=simple
+              User=unbound
+              ExecStart=/usr/local/bin/unbound_exporter \
+                -unbound.host "unix:///run/unbound.ctl" \
+                -unbound.ca "" \
+                -unbound.cert "" \
+                -web.listen-address ":{{ prometheus_exporter_port }}"
+              Restart=always
+
+              [Install]
+              WantedBy=multi-user.target
+          notify: Recharger systemd
+
+        - name: Activer et démarrer unbound_exporter
+          ansible.builtin.systemd:
+            name: unbound_exporter
+            enabled: true
+            state: started
+            daemon_reload: true
+
+    # ========================================
+    # ACTIVATION DES SERVICES
+    # ========================================
+
+    - name: Flush handlers pour recharger systemd
+      ansible.builtin.meta: flush_handlers
+
+    - name: Activer et démarrer le timer de mise à jour des listes
+      ansible.builtin.systemd:
+        name: unbound-update-lists.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Activer et démarrer le timer de mise à jour des root hints
+      ansible.builtin.systemd:
+        name: unbound-root-hints-update.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Exécuter la première mise à jour des listes immédiatement
+      ansible.builtin.systemd:
+        name: unbound-update-lists.service
+        state: started
+      register: first_update
+      changed_when: first_update.changed
+
+    - name: Vérifier la configuration finale d'Unbound
+      ansible.builtin.command: unbound-checkconf
+      register: checkconf_result
+      changed_when: false
+      failed_when: checkconf_result.rc != 0
+
+    - name: Activer et démarrer le service Unbound
+      ansible.builtin.systemd:
+        name: unbound
+        enabled: true
+        state: started
+
+    # ========================================
+    # TESTS DNSSEC
+    # ========================================
+
+    - name: Attendre le démarrage complet d'Unbound
+      ansible.builtin.wait_for:
+        port: 53
+        timeout: 30
+
+    - name: Tester la validation DNSSEC - domaine valide
+      ansible.builtin.command: dig @127.0.0.1 dnssec.works +dnssec +short
+      register: dnssec_valid_test
+      changed_when: false
+      failed_when: dnssec_valid_test.rc != 0
+
+    - name: Tester la validation DNSSEC - domaine avec signature invalide (doit échouer)
+      ansible.builtin.command: dig @127.0.0.1 fail01.dnssec.works +short
+      register: dnssec_fail_test
+      changed_when: false
+      failed_when: dnssec_fail_test.stdout != ""
+
+    # ========================================
+    # MESSAGE DE FIN
+    # ========================================
+
+    - name: Afficher un message de succès
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Installation d'Unbound terminée avec succès !
+          ========================================
+
+          Configuration:
+          - systemd-resolved désactivé et masqué
+          - Port 53 disponible pour Unbound
+          - DNS système: {{ system_dns_servers | join(', ') }}
+          - Unbound forward vers: {{ unbound_upstream_dns | join(', ') }}
+          - DNSSEC activé avec validation stricte
+          - Rate-limiting: {{ ratelimit_global }} req/s par IP
+          - Mise à jour automatique: {{ update_hour }}:{{ update_minute }} quotidien
+          {% if enable_prometheus_exporter %}
+          - Prometheus exporter: http://localhost:{{ prometheus_exporter_port }}/metrics
+          {% endif %}
+
+          Tests DNSSEC:
+          - Domaine valide (dnssec.works): {{ 'OK' if dnssec_valid_test.stdout else 'ÉCHEC' }}
+          - Domaine invalide (fail01.dnssec.works): {{ 'OK (bloqué)' if dnssec_fail_test.stdout == '' else 'ÉCHEC' }}
+
+          Commandes utiles:
+          - Statistiques: sudo unbound-control stats_noreset
+          - Recharger config: sudo unbound-control reload_keep_cache
+          - Logs: sudo journalctl -u unbound -f
+          - Test DNS: dig @localhost google.com
+          - Test DNSSEC: dig @localhost dnssec.works +dnssec
+          ========================================
+
+  handlers:
+    - name: Recharger systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Redémarrer systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+
+    - name: Redémarrer Unbound
+      ansible.builtin.systemd:
+        name: unbound
+        state: restarted
+
+    - name: Recharger Unbound
+      ansible.builtin.command: unbound-control reload_keep_cache
+      changed_when: false
+      failed_when: false

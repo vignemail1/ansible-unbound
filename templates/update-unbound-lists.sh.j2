@@ -1,0 +1,222 @@
+#!/bin/bash
+#
+# Script de mise à jour automatique des listes Unbound
+# Mise à jour périodique avec protection contre la perte de données
+#
+
+set -euo pipefail
+
+# Configuration
+BLACKLIST_URL="{{ blackhole_external_url }}"
+SUBNETS_URL="{{ allowed_subnets_external_url }}"
+
+CACHE_DIR="/var/cache/unbound"
+CONF_DIR="/etc/unbound/unbound.conf.d"
+
+BLACKLIST_CACHE="${CACHE_DIR}/blacklist-external.cache"
+BLACKLIST_CONF="${CONF_DIR}/30-blacklist-external.conf"
+BLACKLIST_TMP="${BLACKLIST_CONF}.tmp"
+
+SUBNETS_CACHE="${CACHE_DIR}/subnets-external.cache"
+SUBNETS_CONF="${CONF_DIR}/11-subnets-external.conf"
+SUBNETS_TMP="${SUBNETS_CONF}.tmp"
+
+LOG_TAG="unbound-update"
+
+# Fonction de logging
+log() {
+    logger -t "${LOG_TAG}" "$1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# Fonction de téléchargement sécurisé avec protection
+# Ne remplace le cache que si le téléchargement réussit
+safe_download() {
+    local url="$1"
+    local cache_file="$2"
+    local temp_download="${cache_file}.download"
+    
+    if [ -z "$url" ]; then
+        log "URL vide, skip du téléchargement pour ${cache_file}"
+        return 0
+    fi
+    
+    log "Téléchargement depuis: ${url}"
+    
+    # Télécharger dans un fichier temporaire
+    if curl -sSfL --max-time 120 --retry 3 --retry-delay 5 \
+         -o "${temp_download}" "${url}"; then
+        
+        # Vérifier que le fichier n'est pas vide
+        if [ -s "${temp_download}" ]; then
+            # Remplacer le cache uniquement si le téléchargement a réussi
+            mv -f "${temp_download}" "${cache_file}"
+            log "Téléchargement réussi: ${cache_file}"
+            return 0
+        else
+            log "ERREUR: Fichier téléchargé vide, conservation du cache précédent"
+            rm -f "${temp_download}"
+            return 1
+        fi
+    else
+        log "ERREUR: Échec du téléchargement, conservation du cache précédent"
+        rm -f "${temp_download}"
+        return 1
+    fi
+}
+
+# Fonction de conversion de la liste de blocage externe en format Unbound
+convert_blacklist() {
+    local input_file="$1"
+    local output_file="$2"
+    
+    if [ ! -f "${input_file}" ]; then
+        log "AVERTISSEMENT: Fichier source ${input_file} inexistant"
+        return 1
+    fi
+    
+    log "Conversion de la blacklist externe..."
+    
+    {
+        echo "server:"
+        echo "    # Blacklist externe générée automatiquement le $(date)"
+        echo "    # Source: ${BLACKLIST_URL}"
+        echo "    # Méthode: NXDOMAIN (always_nxdomain)"
+        echo ""
+        
+        # Extraire les domaines de la liste hosts et convertir en format Unbound NXDOMAIN
+        grep -v '^#' "${input_file}" | \
+        grep -v '^$' | \
+        awk '
+        $1 == "0.0.0.0" || $1 == "127.0.0.1" {
+            if ($2 != "" && $2 != "localhost" && $2 !~ /^localhost\./) {
+                printf "    local-zone: \"%s\" always_nxdomain\n", $2
+            }
+        }' | sort -u
+    } > "${output_file}"
+    
+    local count=$(grep -c "local-zone:" "${output_file}" || true)
+    log "Blacklist externe convertie: ${count} domaines"
+    
+    return 0
+}
+
+# Fonction de conversion de la liste de subnets externes
+convert_subnets() {
+    local input_file="$1"
+    local output_file="$2"
+    
+    if [ ! -f "${input_file}" ]; then
+        log "AVERTISSEMENT: Fichier source ${input_file} inexistant"
+        return 1
+    fi
+    
+    log "Conversion de la liste de subnets externes..."
+    
+    {
+        echo "server:"
+        echo "    # Subnets autorisés externes - généré le $(date)"
+        echo "    # Source: ${SUBNETS_URL}"
+        echo ""
+        
+        # Traiter chaque ligne comme un subnet autorisé
+        grep -v '^#' "${input_file}" | \
+        grep -v '^$' | \
+        while read -r subnet; do
+            echo "    access-control: ${subnet} allow"
+        done
+    } > "${output_file}"
+    
+    local count=$(grep -c "access-control:" "${output_file}" || true)
+    log "Subnets externes convertis: ${count} entrées"
+    
+    return 0
+}
+
+# Mise à jour de la blacklist externe
+update_blacklist() {
+    if [ -n "${BLACKLIST_URL}" ]; then
+        log "=== Mise à jour de la blacklist externe ==="
+        
+        # Télécharger la liste (protégé contre l'écrasement en cas d'échec)
+        if safe_download "${BLACKLIST_URL}" "${BLACKLIST_CACHE}"; then
+            # Convertir en format Unbound dans un fichier temporaire
+            if convert_blacklist "${BLACKLIST_CACHE}" "${BLACKLIST_TMP}"; then
+                # Valider la configuration
+                if unbound-checkconf "${BLACKLIST_TMP}" > /dev/null 2>&1; then
+                    # Écriture atomique: renommer le fichier temporaire
+                    mv -f "${BLACKLIST_TMP}" "${BLACKLIST_CONF}"
+                    log "Blacklist externe mise à jour avec succès"
+                    return 0
+                else
+                    log "ERREUR: Configuration invalide, conservation de la version précédente"
+                    rm -f "${BLACKLIST_TMP}"
+                    return 1
+                fi
+            fi
+        fi
+        
+        log "Échec de la mise à jour de la blacklist, utilisation de la version en cache"
+    fi
+}
+
+# Mise à jour des subnets externes
+update_subnets() {
+    if [ -n "${SUBNETS_URL}" ]; then
+        log "=== Mise à jour des subnets externes ==="
+        
+        if safe_download "${SUBNETS_URL}" "${SUBNETS_CACHE}"; then
+            if convert_subnets "${SUBNETS_CACHE}" "${SUBNETS_TMP}"; then
+                if unbound-checkconf "${SUBNETS_TMP}" > /dev/null 2>&1; then
+                    mv -f "${SUBNETS_TMP}" "${SUBNETS_CONF}"
+                    log "Subnets externes mis à jour avec succès"
+                    return 0
+                else
+                    log "ERREUR: Configuration invalide, conservation de la version précédente"
+                    rm -f "${SUBNETS_TMP}"
+                    return 1
+                fi
+            fi
+        fi
+        
+        log "Échec de la mise à jour des subnets, utilisation de la version en cache"
+    fi
+}
+
+# Fonction principale
+main() {
+    log "Démarrage de la mise à jour des listes Unbound"
+    
+    # Créer les répertoires si nécessaire
+    mkdir -p "${CACHE_DIR}" "${CONF_DIR}"
+    
+    local needs_reload=0
+    
+    # Mettre à jour la blacklist
+    if update_blacklist; then
+        needs_reload=1
+    fi
+    
+    # Mettre à jour les subnets
+    if update_subnets; then
+        needs_reload=1
+    fi
+    
+    # Recharger Unbound si des mises à jour ont été effectuées
+    if [ ${needs_reload} -eq 1 ]; then
+        log "Rechargement d'Unbound avec conservation du cache..."
+        if unbound-control reload_keep_cache > /dev/null 2>&1; then
+            log "Unbound rechargé avec succès"
+        else
+            log "AVERTISSEMENT: Échec du rechargement via unbound-control"
+            systemctl reload unbound || systemctl restart unbound
+        fi
+    else
+        log "Aucune mise à jour effectuée"
+    fi
+    
+    log "Mise à jour terminée"
+}
+
+# Exécution
+main

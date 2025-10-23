@@ -1,0 +1,14 @@
+# Configuration du forward-zone pour les résolutions externes
+# Les requêtes DNS non locales seront transmises à ces serveurs upstream
+
+forward-zone:
+    # Forward de toutes les zones (.) vers les DNS upstream
+    name: "."
+    
+    # Liste des serveurs DNS upstream
+{% for dns in ss  %}
+    forward-addr: {{ dns }}
+{% endfor %}
+    
+    # En cas d'échec des forwarders, tenter la résolution directe
+    forward-first: no

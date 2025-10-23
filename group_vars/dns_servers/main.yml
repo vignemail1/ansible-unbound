@@ -1,0 +1,93 @@
+# Résolveurs DNS externes pour l'OS (utilisés dans /etc/resolv.conf)
+system_dns_servers:
+- "192.168.1.1" # routeur local par exemple
+
+# Résolveurs DNS upstream pour Unbound (forward-zone)
+# requetes directes vers les serveurs extérieures si liste vide
+unbound_upstream_dns: []
+# - "1.1.1.1" # Cloudflare DNS
+
+# Rate limiting
+ratelimit_global: 1000
+ip_ratelimit: 100
+
+# Monitoring
+enable_prometheus_exporter: false
+prometheus_exporter_port: 9167
+
+# Subnets autorisés pour la récursion DNS (gérés manuellement)
+allowed_subnets_manual:
+- "192.168.1.0/24" # local network
+
+# URL de la liste externe de subnets (optionnel, laisser vide si non utilisé)
+allowed_subnets_external_url: ""
+
+# Liste manuelle de domaines à bloquer
+blackhole_domains_manual:
+- "academyawards.effers.com."
+- "adobe.faqserv.com."
+- "adobes3.sytes.net."
+- "arctic-zone.bbsindex.com."
+- "blog.epiccosplay.com."
+- "cars-online.zapto.org."
+- "cheapflights.etowns.net."
+- "communityeu.xp3.biz."
+- "cqcount.servehttp.com."
+- "cyberlocker.ch."
+- "easycounter.sytes.net."
+- "eu-sciffi.99k.org."
+- "euassociate.6te.net."
+- "euland.freevar.com."
+- "eunews-online.zapto.org."
+- "fifa-rules.25u.com."
+- "filesara.ir."
+- "forum.4dq.com."
+- "forum.acmetoy.com."
+- "forum.sytes.net."
+- "franceonline.sytes.net."
+- "freeutils.3utilities.com."
+- "gofree.ir."
+- "health-everyday.faqserv.com."
+- "homaxcompany.com."
+- "image.servepics.com."
+- "interesting-news.zapto.org."
+- "july.mypressonline.com."
+- "launchpadd.com."
+- "marketplace.servehttp.com."
+- "music-world.servemp3.com."
+- "newsweek.serveblog.net."
+- "newutils.3utilities.com."
+- "nhl-blog.servegame.com."
+- "north-area.bbsindex.com."
+- "olympik-blog.4dq.com."
+- "pockerroom.servebeer.com."
+- "pressforum.serveblog.net."
+- "scandinavia-facts.sytes.net."
+- "seetorontonow.jp."
+- "shockwave.sytes.net."
+- "softprog.freeoda.com."
+- "songkadeh.ir."
+- "sportmusic.servemp3.com."
+- "stockholm-blog.hopto.org."
+- "supernews.sytes.net."
+- "sweeden-history.zapto.org."
+- "swim.onlinewebshop.net."
+- "tiger.got-game.org."
+- "toolsthem.xp3.biz."
+- "top-facts.sytes.net."
+- "translate.servemp3.com."
+- "weather-online.hopto.org."
+- "winter.site11.com."
+- "wintersport.sytes.net."
+- "www.hadilotfi.com."
+- "x-files.zapto.org."
+
+# URL de la liste externe de blocage
+blackhole_external_url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+
+# Adresse de redirection pour les domaines bloqués (si méthode redirect)
+blackhole_ip: "0.0.0.0"
+
+# Fréquence de mise à jour (quotidien à 3h du matin)
+update_hour: "3"
+update_minute: "0"

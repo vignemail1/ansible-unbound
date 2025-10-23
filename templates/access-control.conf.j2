@@ -1,0 +1,80 @@
+server:
+    # ========================================
+    # INTERFACE ET PORT
+    # ========================================
+    
+    # Écouter sur toutes les interfaces
+    interface: 0.0.0.0
+    interface: ::0
+    
+    # Port d'écoute
+    port: 53
+    
+    # ========================================
+    # PERFORMANCE ET CACHE
+    # ========================================
+    
+    # Niveau de verbosité (1 recommandé pour production)
+    verbosity: 1
+    
+    # Configuration multi-thread
+    num-threads: 4
+    msg-cache-slabs: 8
+    rrset-cache-slabs: 8
+    infra-cache-slabs: 8
+    key-cache-slabs: 8
+    
+    # Taille des caches
+    rrset-cache-size: 256m
+    msg-cache-size: 128m
+    
+    # Buffers optimisés
+    so-rcvbuf: 4m
+    so-sndbuf: 4m
+    
+    # ========================================
+    # SÉCURITÉ ET PRIVACY
+    # ========================================
+    
+    # Masquer identité et version
+    hide-identity: yes
+    hide-version: yes
+    
+    # Sécurité renforcée
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    
+    # ========================================
+    # CONTRÔLE D'ACCÈS
+    # ========================================
+    
+    # Refuser tout par défaut
+    access-control: 0.0.0.0/0 refuse
+    access-control: ::/0 refuse
+    
+    # Autoriser localhost
+    access-control: 127.0.0.0/8 allow
+    access-control: ::1 allow
+    
+    # Autoriser les subnets manuels
+{% for subnet in allowed_subnets_manual %}
+    access-control: {{ subnet }} allow
+{% endfor %}
+    
+    # ========================================
+    # PROTECTION CONTRE DNS REBINDING
+    # ========================================
+    
+    private-address: 10.0.0.0/8
+    private-address: 172.16.0.0/12
+    private-address: 192.168.0.0/16
+    private-address: 169.254.0.0/16
+    private-address: fd00::/8
+    private-address: fe80::/10
+    private-address: 127.0.0.0/8
+    private-address: ::ffff:0:0/96
+
+remote-control:
+    # Interface de contrôle pour monitoring
+    control-enable: yes
+    control-interface: /run/unbound.ctl
