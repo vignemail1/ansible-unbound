@@ -5,8 +5,9 @@ system_dns_servers:
 # Résolveurs DNS upstream pour Unbound (forward-zone)
 # requetes directes vers les serveurs extérieures si liste vide
 unbound_upstream_dns: []
-## Certains, comme DNS0.EU, Quad9 ou CleanBrowsing, mettent l'accent 
+## Certains, comme Quad9 ou CleanBrowsing, mettent l'accent 
 ## sur la protection de la vie privée et la lutte contre les sites malveillants.
+## https://lecrabeinfo.net/guides/les-meilleurs-serveurs-dns-rapides-et-gratuits/
 
 # - "1.1.1.1"               # Cloudflare
 # - "1.0.0.1"               # Cloudflare
@@ -38,10 +39,10 @@ unbound_upstream_dns: []
 # - "2a07:a8c0::"         # NextDNS
 # - "2a07:a8c1::"         # NextDNS
 #
-# - "185.228.168.9"       # CleanBrowsing
-# - "185.228.169.9"       # CleanBrowsing
-# - "2a0d:2a00:1::1"      # CleanBrowsing
-# - "2a0d:2a00:2::2"      # CleanBrowsing
+# - "185.228.168.9"       # CleanBrowsing - Security Filter - https://cleanbrowsing.org/filters/#step3
+# - "185.228.169.9"       # CleanBrowsing - Security Filter - https://cleanbrowsing.org/filters/#step3
+# - "2a0d:2a00:1::2"      # CleanBrowsing - Security Filter - https://cleanbrowsing.org/filters/#step3
+# - "2a0d:2a00:2::2"      # CleanBrowsing - Security Filter - https://cleanbrowsing.org/filters/#step3
 #
 # - "8.26.56.26"          # Comodo Secure DNS
 # - "8.20.247.20"         # Comodo Secure DNS
@@ -58,6 +59,7 @@ unbound_upstream_dns: []
 #
 # - "216.87.84.211"       # OpenNIC Project
 # - "23.90.4.6"           # OpenNIC Project
+# - "51.158.108.203"      # OpenNIC Project
 #
 # - "84.200.69.80"                # DNS.Watch
 # - "84.200.70.40"                # DNS.Watch
@@ -69,11 +71,20 @@ unbound_upstream_dns: []
 # - "2001:910:800::12"    # FDN - France Datacenter Network
 # - "2001:910:800::40"    # FDN - France Datacenter Network
 #
-# - "193.110.81.0"        # DNS0.EU (AFNIC / NLNet Labs)
-# - "185.253.5.0"         # DNS0.EU (AFNIC / NLNet Labs)
-# - "2a0f:fc80::"         # DNS0.EU (AFNIC / NLNet Labs)
-# - "2a0f:fc81::"         # DNS0.EU (AFNIC / NLNet Labs)
+# - "86.54.11.100"            # DNS4EU (non filtré)
+# - "86.54.11.200"            # DNS4EU (non filtré)
+# - "2a13:1001::86:54:11:100" # DNS4EU (non filtré)
+# - "2a13:1001::86:54:11:200" # DNS4EU (non filtré)
+#
+# - "86.54.11.11"             # DNS4EU (with Child protection and Ad blocking)
+# - "86.54.11.211"            # DNS4EU (with Child protection and Ad blocking)
+# - "2a13:1001::86:54:11:11"  # DNS4EU (with Child protection and Ad blocking)
+# - "2a13:1001::86:54:11:211" # DNS4EU (with Child protection and Ad blocking)
 
+# - "76.76.2.2"       # Control-D (with Malware, ads and tracking blocking) - https://controld.com/free-dns
+# - "76.76.10.2"      # Control-D (with Malware, ads and tracking blocking) - https://controld.com/free-dns
+# - "2606:1a40::2"    # Control-D (with Malware, ads and tracking blocking) - https://controld.com/free-dns
+# - "2606:1a40:1::2"  # Control-D (with Malware, ads and tracking blocking) - https://controld.com/free-dns
 
 # Rate limiting
 ratelimit_global: 1000
